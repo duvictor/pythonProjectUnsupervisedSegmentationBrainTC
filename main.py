@@ -16,15 +16,18 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 import cv2
+import os
 import numpy as np
 import torch.nn.init
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from dicom_to_nifti import converter
 from validarMetodologia import executar_metodologia
 
 
 
 use_cuda = torch.cuda.is_available()
+
+print("is cuda avaliable: {}".format(use_cuda))
 
 parser = argparse.ArgumentParser(description='Unsupervised model for structure segmentation applied to brain computed tomography')
 
@@ -42,13 +45,11 @@ parser.add_argument('--stepsize_con', metavar='CON', default=3.4, type=float, he
 parser.add_argument('--stepsize_sim', metavar='SIM', default=0.4, type=float, help='step size for similarity loss - regularizacao', required=False)
 parser.add_argument('--lambda_rotulo', metavar='sim', default=1, type=float, help='medir a distância entre uma imagem e outra na questão da similaridade')
 parser.add_argument('--visualize', metavar='1 or 0', default=1, type=int, help='visualization flag')
-parser.add_argument('--train', metavar='FILENAME', default='dataset\\train\\CQ500CT47\\Unknown Study\\CT PRE CONTRAST THIN', help='input tc file name')
-parser.add_argument('--nifti_train', metavar='FILENAME', default='result\\CQ500CT47.nii.gz', help='output tc file nifti')
+parser.add_argument('--train', metavar='FILENAME', default='dataset/train/CQ500CT47/Unknown Study/CT PRE CONTRAST THIN/', help='input tc file name')
+parser.add_argument('--nifti_train', metavar='FILENAME', default='result/CQ500CT47.nii.gz', help='output tc file nifti')
 
 
 args = parser.parse_args()
-
-
 
 
 
@@ -59,7 +60,7 @@ nifti_file = args.nifti_train
 window_center = 40
 window_width = 80
 
-
+print("starting convertion")
 vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
 
 # define volume size
@@ -114,6 +115,7 @@ data = Variable(data)
 
 # train
 # model = MyNet(data.size(1))
+print("creating model")
 model = MyNet(1)
 print(model)
 if use_cuda:
@@ -148,7 +150,9 @@ stoped = False
 
 # iteração para finalizar o algoritmo em caso de não encontrar os rótulos
 # iterate to train
+print("starting training iteration")
 for batch_idx in range(args.maxIter):
+    print("batch {} of {}".format(batch_idx, args.maxIter))
     loss_medio = 0
     if stoped:
         break
@@ -176,20 +180,20 @@ for batch_idx in range(args.maxIter):
 
         posicao = 0
         rows, cols = 5, 5
-        plt.figure(figsize=(60, 40))
-        fig, ax = plt.subplots(rows, cols, sharex='col', sharey='row')
+        # plt.figure(figsize=(60, 40))
+        # fig, ax = plt.subplots(rows, cols, sharex='col', sharey='row')
 
-        for row in range(rows):
-            for col in range(cols):
-                # ax[row, col].text(0.5, 0.5,
-                #                   str((row, col)),
-                #                   color="green",
-                #                   fontsize=18,
-                #                   ha='center')
-                ax[row, col].imshow(features[posicao, :, :].data.cpu().numpy())
-                posicao = posicao + 1
-
-        plt.show()
+        # for row in range(rows):
+        #     for col in range(cols):
+        #         # ax[row, col].text(0.5, 0.5,
+        #         #                   str((row, col)),
+        #         #                   color="green",
+        #         #                   fontsize=18,
+        #         #                   ha='center')
+        #         ax[row, col].imshow(features[posicao, :, :].data.cpu().numpy())
+        #         posicao = posicao + 1
+        #
+        # plt.show()
 
 
 
@@ -217,17 +221,17 @@ for batch_idx in range(args.maxIter):
         nLabels = len(np.unique(im_target))
 
 
-        if args.visualize:
-            im_target_rgb = np.array([label_colours[c % args.nChannel] for c in im_target])
-            im_target_rgb = im_target_rgb.reshape(512,512,3).astype(np.uint8)
+        # if args.visualize:
+            # im_target_rgb = np.array([label_colours[c % args.nChannel] for c in im_target])
+            # im_target_rgb = im_target_rgb.reshape(512,512,3).astype(np.uint8)
+            #
+            # im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
+            # data2 = cv2.resize(data_show, (600, 600))
+            # cv2.imshow("output", im_target_rgb)
+            # cv2.imshow("original", data2)
+            # cv2.waitKey(10)
 
-            im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
-            data2 = cv2.resize(data_show, (600, 600))
-            cv2.imshow("output", im_target_rgb)
-            cv2.imshow("original", data2)
-            cv2.waitKey(10)
-
-            loss = args.stepsize_sim * loss_fn(permutado, target) + args.stepsize_con * (lhpy + lhpz)
+        loss = args.stepsize_sim * loss_fn(permutado, target) + args.stepsize_con * (lhpy + lhpz)
 
         loss.backward()
         optimizer.step()
@@ -246,11 +250,11 @@ for batch_idx in range(args.maxIter):
 
 # INICIO VALIDAÇÃO
 exames_validar = {
-"CQ500CT42": "dataset\\validation\\CQ500CT42\\Unknown Study\\CT PRE CONTRAST THIN",
-"CQ500CT195": "dataset\\validation\\CQ500CT195\\Unknown Study\\CT PRE CONTRAST THIN",
-"CQ500CT200": "dataset\\validation\\CQ500CT200\\Unknown Study\\CT Thin Plain",
-"CQ500CT299": "dataset\\validation\\CQ500CT299\\Unknown Study\\CT Thin Plain",
-"CQ500CT418": "dataset\\validation\\CQ500CT418\\Unknown Study\\CT Thin Plain"
+"CQ500CT42": "dataset/validation/CQ500CT42/Unknown Study/CT PRE CONTRAST THIN/",
+"CQ500CT195": "dataset/validation/CQ500CT195/Unknown Study/CT PRE CONTRAST THIN/",
+"CQ500CT200": "dataset/validation/CQ500CT200/Unknown Study/CT Thin Plain/",
+"CQ500CT299": "dataset/validation/CQ500CT299/Unknown Study/CT Thin Plain/",
+"CQ500CT418": "dataset/validation/CQ500CT418/Unknown Study/CT Thin Plain/"
 }
 
 

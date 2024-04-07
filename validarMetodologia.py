@@ -6,7 +6,7 @@ by Paulo Victor dos Santos
 
 import os
 from torch.autograd import Variable
-import cv2
+# import cv2
 import numpy as np
 import torch.nn.init
 import nibabel as nb
@@ -81,11 +81,11 @@ def executar_metodologia(use_cuda, model, label_colours, args, key, folder_dcm, 
 
             nifti_teste[slice, :, :] = im_target.reshape(512, 512).astype(np.uint8)
 
-            im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
-            data2 = cv2.resize(data1, (600, 600))
-            cv2.imshow("output", im_target_rgb)
-            cv2.imshow("original", data2)
-            cv2.waitKey(10)
+            # im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
+            # data2 = cv2.resize(data1, (600, 600))
+            # cv2.imshow("output", im_target_rgb)
+            # cv2.imshow("original", data2)
+            # cv2.waitKey(10)
             loss = args.stepsize_sim * loss_fn(output, target) + args.stepsize_con * (lhpy + lhpz)
             loss.backward()
             loss_medio += loss.item()
