@@ -20,7 +20,13 @@ Finally, the evaluation of the proposed model is described in Section \ref{secao
 
 ## How to use
 
-To use this code, you must follow the instructions contained in the documentation for each system component. Make sure you have all dependencies installed before running the code.
+To use this code, you must follow the instructions contained in the documentation for each system component.
+Make sure you have all dependencies installed before running the code.
+
+docker build -f Dockerfile -t segmentation .
+
+docker run segmentation
+
 
 ## References
 
