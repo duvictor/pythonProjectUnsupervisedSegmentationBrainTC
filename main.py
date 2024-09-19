@@ -15,13 +15,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-import cv2
-import os
 import numpy as np
 import torch.nn.init
-# import matplotlib.pyplot as plt
 from dicom_to_nifti import converter
 from validarMetodologia import executar_metodologia
+import time
 
 
 
@@ -61,8 +59,13 @@ window_center = 40
 window_width = 80
 
 print("starting convertion")
+convertion_time = time.time()
 vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
+print("--- %s seconds convertion ---" % (time.time() - convertion_time))
 
+
+
+train_time = time.time()
 # define volume size
 Z = vol.shape[0]
 H = 512
@@ -248,6 +251,10 @@ for batch_idx in range(args.maxIter):
             break
 
 
+print("--- %s seconds trains ---" % (time.time() - train_time))
+
+
+
 # INICIO VALIDAÇÃO
 exames_validar = {
 "CQ500CT42": "dataset/validation/CQ500CT42/Unknown Study/CT PRE CONTRAST THIN/",
@@ -260,6 +267,8 @@ exames_validar = {
 
 
 for key in exames_validar:
+    exam_time = time.time()
     exame_validar_local = exames_validar[key]
     loss_medio = executar_metodologia(use_cuda, model, label_colours, args, key, exame_validar_local, window_center, window_width)
+    print("--- %s seconds to exam %s ---" % (time.time() - exam_time, key))
     print("finalizou o exame {} com loss médio de {}".format(key, loss_medio))
