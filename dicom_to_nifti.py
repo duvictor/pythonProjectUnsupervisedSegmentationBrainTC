@@ -236,8 +236,37 @@ def window_image(image, window_center, window_width):
     window_image[window_image > img_max] = img_max
     return window_image
 
+def converter(input_dicoms, output_nifti, window_center=None, window_width=None, apply_window=True):
+    """Converter DICOM (com ou sem janelamento) para NIFTI."""
+    # Cria uma lista de arquivos DICOM
+    files = find_dicom_files(input_dicoms)
+    if not files:
+        sys.stderr.write("No DICOM files found.\n")
+        return 1
 
-def converter(input_dicoms, output_nifti, window_center, window_width):
+    # Carrega os arquivos para criar uma lista de slices
+    series = load_dicom_series(files)
+    if not series:
+        sys.stderr.write("Unable to read DICOM files.\n")
+        return 1
+
+    # Reconstrói as imagens em um volume
+    vol, pixdim, mat = dicom_to_volume(series)
+
+    # Converte coordenadas DICOM para coordenadas NIFTI (in-place)
+    convert_coords(vol, mat)
+
+    # Se o janelamento é necessário, aplica as transformações
+    if apply_window and window_center is not None and window_width is not None:
+        vol = window_image(vol, window_center, window_width)
+
+    # Escreve o arquivo NIFTI
+    write_nifti(output_nifti, vol, mat)
+
+    return vol, mat
+
+
+def converter_old(input_dicoms, output_nifti, window_center, window_width):
     """Callable entry point.
     """
 

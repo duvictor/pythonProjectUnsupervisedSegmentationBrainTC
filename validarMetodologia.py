@@ -33,7 +33,7 @@ def executar_metodologia(use_cuda, model, label_colours, args, key, folder_dcm, 
 
         nifti_file = "result\\{}_janelado.nii.gz".format(key)
 
-        exame_teste, affine = converter(folder_dcm, nifti_file, window_center, window_width)
+        exame_teste, affine = converter(folder_dcm, nifti_file, apply_window=False)
         empty_header = nb.Nifti1Header()
         empty_header.get_data_shape()
 

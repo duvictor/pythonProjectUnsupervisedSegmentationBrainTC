@@ -43,9 +43,10 @@ parser.add_argument('--stepsize_con', metavar='CON', default=3.4, type=float, he
 parser.add_argument('--stepsize_sim', metavar='SIM', default=0.4, type=float, help='step size for similarity loss - regularizacao', required=False)
 parser.add_argument('--lambda_rotulo', metavar='sim', default=1, type=float, help='medir a distância entre uma imagem e outra na questão da similaridade')
 parser.add_argument('--visualize', metavar='1 or 0', default=1, type=int, help='visualization flag')
-parser.add_argument('--train', metavar='FILENAME', default='dataset/train/CQ500CT47/Unknown Study/CT PRE CONTRAST THIN/', help='input tc file name')
-parser.add_argument('--nifti_train', metavar='FILENAME', default='result/CQ500CT47.nii.gz', help='output tc file nifti')
+parser.add_argument('--train', metavar='FILENAME', default='dataset/MR-MS-new/P0008/', help='input tc file name')
+parser.add_argument('--nifti_train', metavar='FILENAME', default='result/P0008.nii.gz', help='output tc file nifti')
 
+# D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\dataset\MR-MS-new\P0008
 
 args = parser.parse_args()
 
@@ -60,7 +61,8 @@ window_width = 80
 
 print("starting convertion")
 convertion_time = time.time()
-vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
+# vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
+vol, affine = converter(folder_dcm, nifti_file, apply_window=False)
 print("--- %s seconds convertion ---" % (time.time() - convertion_time))
 
 
@@ -107,7 +109,8 @@ class MyNet(nn.Module):
 
 
 
-data = torch.from_numpy(np.array([exame_train.astype('float32') / 255.]))
+# data = torch.from_numpy(np.array([exame_train.astype('float32') / 255.]))
+data = torch.tensor([exame_train / 255.], dtype=torch.float32)
 data = data.reshape(Z, H, W)
 
 if use_cuda:
@@ -256,15 +259,22 @@ print("--- %s seconds trains ---" % (time.time() - train_time))
 
 
 # INICIO VALIDAÇÃO
+# exames_validar = {
+# "CQ500CT42": "dataset/validation/CQ500CT42/Unknown Study/CT PRE CONTRAST THIN/",
+# "CQ500CT195": "dataset/validation/CQ500CT195/Unknown Study/CT PRE CONTRAST THIN/",
+# "CQ500CT200": "dataset/validation/CQ500CT200/Unknown Study/CT Thin Plain/",
+# "CQ500CT299": "dataset/validation/CQ500CT299/Unknown Study/CT Thin Plain/",
+# "CQ500CT418": "dataset/validation/CQ500CT418/Unknown Study/CT Thin Plain/"
+# }
+
+
 exames_validar = {
-"CQ500CT42": "dataset/validation/CQ500CT42/Unknown Study/CT PRE CONTRAST THIN/",
-"CQ500CT195": "dataset/validation/CQ500CT195/Unknown Study/CT PRE CONTRAST THIN/",
-"CQ500CT200": "dataset/validation/CQ500CT200/Unknown Study/CT Thin Plain/",
-"CQ500CT299": "dataset/validation/CQ500CT299/Unknown Study/CT Thin Plain/",
-"CQ500CT418": "dataset/validation/CQ500CT418/Unknown Study/CT Thin Plain/"
+"P0009": "dataset/MR-MS-new/P0009/",
+"P00010": "dataset/MR-MS-new/P00010/",
+"P00011": "dataset/MR-MS-new/P00011/"
 }
 
-
+# D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\dataset\MR-MS-new\P0008
 
 for key in exames_validar:
     exam_time = time.time()
