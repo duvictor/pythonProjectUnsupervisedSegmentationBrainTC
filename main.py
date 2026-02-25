@@ -19,7 +19,11 @@ import numpy as np
 import torch.nn.init
 from dicom_to_nifti import converter
 from validarMetodologia import executar_metodologia
+import cv2
+
 import time
+import matplotlib.pyplot as plt
+
 
 
 
@@ -43,6 +47,8 @@ parser.add_argument('--stepsize_con', metavar='CON', default=3.4, type=float, he
 parser.add_argument('--stepsize_sim', metavar='SIM', default=0.4, type=float, help='step size for similarity loss - regularizacao', required=False)
 parser.add_argument('--lambda_rotulo', metavar='sim', default=1, type=float, help='medir a distância entre uma imagem e outra na questão da similaridade')
 parser.add_argument('--visualize', metavar='1 or 0', default=1, type=int, help='visualization flag')
+parser.add_argument('--debug_progress', metavar='1 or 0', default=0, type=int, help='show progress heartbeat during training loop')
+parser.add_argument('--debug_interval', metavar='N', default=10, type=int, help='slices interval for debug heartbeat')
 parser.add_argument('--train', metavar='FILENAME', default='dataset/MR-MS-new/P0008/', help='input tc file name')
 parser.add_argument('--nifti_train', metavar='FILENAME', default='result/P0008.nii.gz', help='output tc file nifti')
 
@@ -158,11 +164,16 @@ stoped = False
 # iterate to train
 print("starting training iteration")
 for batch_idx in range(args.maxIter):
-    print("batch {} of {}".format(batch_idx, args.maxIter))
+    print("batch {} of {}".format(batch_idx, args.maxIter), flush=True)
+    batch_start_time = time.time()
     loss_medio = 0
     if stoped:
         break
     for slice in range(Z):
+        slice_start_time = time.time()
+        if args.debug_progress and (slice == 0 or ((slice + 1) % args.debug_interval == 0) or (slice == Z - 1)):
+            print("[debug] iniciando slice {}/{} no batch {}/{}".format(slice + 1, Z, batch_idx + 1, args.maxIter), flush=True)
+
         data1 = data[slice, :, :]  #exame na escala de cinza 255
 
         data1 = data1.reshape(1,1,512,512)
@@ -184,8 +195,8 @@ for batch_idx in range(args.maxIter):
         permutado = features.permute(1, 2, 0).contiguous().view(-1, args.nChannel)
 
 
-        posicao = 0
-        rows, cols = 5, 5
+        # posicao = 0
+        # rows, cols = 5, 5
         # plt.figure(figsize=(60, 40))
         # fig, ax = plt.subplots(rows, cols, sharex='col', sharey='row')
 
@@ -198,7 +209,7 @@ for batch_idx in range(args.maxIter):
         #         #                   ha='center')
         #         ax[row, col].imshow(features[posicao, :, :].data.cpu().numpy())
         #         posicao = posicao + 1
-        #
+        
         # plt.show()
 
 
@@ -227,15 +238,15 @@ for batch_idx in range(args.maxIter):
         nLabels = len(np.unique(im_target))
 
 
-        # if args.visualize:
-            # im_target_rgb = np.array([label_colours[c % args.nChannel] for c in im_target])
-            # im_target_rgb = im_target_rgb.reshape(512,512,3).astype(np.uint8)
-            #
-            # im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
-            # data2 = cv2.resize(data_show, (600, 600))
-            # cv2.imshow("output", im_target_rgb)
-            # cv2.imshow("original", data2)
-            # cv2.waitKey(10)
+        if args.visualize:
+            im_target_rgb = np.array([label_colours[c % args.nChannel] for c in im_target])
+            im_target_rgb = im_target_rgb.reshape(512,512,3).astype(np.uint8)
+            
+            im_target_rgb = cv2.resize(im_target_rgb, (600, 600))
+            data2 = cv2.resize(data_show, (600, 600))
+            cv2.imshow("output", im_target_rgb)
+            cv2.imshow("original", data2)
+            cv2.waitKey(10)
 
         loss = args.stepsize_sim * loss_fn(permutado, target) + args.stepsize_con * (lhpy + lhpz)
 
@@ -247,6 +258,19 @@ for batch_idx in range(args.maxIter):
         torch.save(optimizer.state_dict(), 'result/optimizer.pth')
 
         print(batch_idx, '/', args.maxIter, '|', ' label num :', nLabels, ' | loss :', loss.item())
+
+        if args.debug_progress and (slice == 0 or ((slice + 1) % args.debug_interval == 0) or (slice == Z - 1)):
+            print(
+                "[debug] finalizou slice {}/{} | t_slice={:.2f}s | t_batch={:.2f}s | labels={} | loss={:.6f}".format(
+                    slice + 1,
+                    Z,
+                    time.time() - slice_start_time,
+                    time.time() - batch_start_time,
+                    nLabels,
+                    loss.item()
+                ),
+                flush=True
+            )
 
         if nLabels <= args.minLabels:
             print("loss_final :", loss.item(), " loss_medio :", loss_medio / Z, " nLabels :", nLabels, " reached minLabels :", args.minLabels, ".")
@@ -270,8 +294,8 @@ print("--- %s seconds trains ---" % (time.time() - train_time))
 
 exames_validar = {
 "P0009": "dataset/MR-MS-new/P0009/",
-"P00010": "dataset/MR-MS-new/P00010/",
-"P00011": "dataset/MR-MS-new/P00011/"
+"P0010": "dataset/MR-MS-new/P0010/",
+"P0011": "dataset/MR-MS-new/P0011/"
 }
 
 # D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\dataset\MR-MS-new\P0008
