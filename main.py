@@ -21,6 +21,8 @@ from dicom_to_nifti import converter
 from validarMetodologia import executar_metodologia
 import cv2
 
+from mr_window_filter import MRWindowFilter
+
 import time
 import matplotlib.pyplot as plt
 
@@ -34,18 +36,18 @@ print("is cuda avaliable: {}".format(use_cuda))
 parser = argparse.ArgumentParser(description='Unsupervised model for structure segmentation applied to brain computed tomography')
 
 #filtro
-parser.add_argument('--nChannel', metavar='N', default=45, type=int, help='number of channels')
+parser.add_argument('--nChannel', metavar='N', default=90, type=int, help='number of channels')
 #camada
 parser.add_argument('--nConv', metavar='M', default=3, type=int, help='number of convolutional layers')
 #iteracao
-parser.add_argument('--maxIter', metavar='T', default=3, type=int, help='number of maximum iterations')
+parser.add_argument('--maxIter', metavar='T', default=27, type=int, help='number of maximum iterations')
 #número de rótulos
-parser.add_argument('--minLabels', metavar='minL', default=7, type=int, help='minimum number of labels')
+parser.add_argument('--minLabels', metavar='minL', default=9, type=int, help='minimum number of labels')
 #taxa de aprendizado
-parser.add_argument('--lr', metavar='LR', default=0.08104, type=float, help='learning rate')
-parser.add_argument('--stepsize_con', metavar='CON', default=3.4, type=float, help='step size for continuity loss - regularização')
-parser.add_argument('--stepsize_sim', metavar='SIM', default=0.4, type=float, help='step size for similarity loss - regularizacao', required=False)
-parser.add_argument('--lambda_rotulo', metavar='sim', default=1, type=float, help='medir a distância entre uma imagem e outra na questão da similaridade')
+parser.add_argument('--lr', metavar='LR', default=0.04280789003354145, type=float, help='learning rate')
+parser.add_argument('--stepsize_con', metavar='CON', default=0.29729394988995367, type=float, help='step size for continuity loss - regularização')
+parser.add_argument('--stepsize_sim', metavar='SIM', default=1.323674790329393, type=float, help='step size for similarity loss - regularizacao', required=False)
+parser.add_argument('--lambda_rotulo', metavar='sim', default=4, type=float, help='medir a distância entre uma imagem e outra na questão da similaridade')
 parser.add_argument('--visualize', metavar='1 or 0', default=1, type=int, help='visualization flag')
 parser.add_argument('--debug_progress', metavar='1 or 0', default=0, type=int, help='show progress heartbeat during training loop')
 parser.add_argument('--debug_interval', metavar='N', default=10, type=int, help='slices interval for debug heartbeat')
@@ -68,7 +70,11 @@ window_width = 80
 print("starting convertion")
 convertion_time = time.time()
 # vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
-vol, affine = converter(folder_dcm, nifti_file, apply_window=False)
+# vol, affine = converter(folder_dcm, nifti_file, apply_window=False)
+
+mr_filter = MRWindowFilter(window_width=1.929, window_center=1.261)
+vol, affine = mr_filter.converter(folder_dcm, nifti_file)
+
 print("--- %s seconds convertion ---" % (time.time() - convertion_time))
 
 

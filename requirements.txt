@@ -3,7 +3,9 @@ nibabel
 numpy
 torchvision
 torch
-opencv-python==4.5.5.64
+#opencv-python==4.5.5.64
+opencv-python
 matplotlib
 pylibjpeg
 pylibjpeg-libjpeg
+#torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121

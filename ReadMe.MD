@@ -1,5 +1,7 @@
 # README
 
+https://lit.fe.uni-lj.si/en/research/resources/3D-MR-MS/?utm_source=chatgpt.com
+
 ## Introduction
 
 This repository contains the implementation of a methodology for automated segmentation of brain structures in cranial tomography exams.
