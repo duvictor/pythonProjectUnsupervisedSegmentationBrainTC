@@ -70,11 +70,7 @@ window_width = 80
 print("starting convertion")
 convertion_time = time.time()
 # vol, affine = converter(folder_dcm, nifti_file, window_center, window_width)
-# vol, affine = converter(folder_dcm, nifti_file, apply_window=False)
-
-mr_filter = MRWindowFilter(window_width=1.929, window_center=1.261)
-vol, affine = mr_filter.converter(folder_dcm, nifti_file)
-
+vol, affine = converter(folder_dcm, nifti_file, apply_window=False)
 print("--- %s seconds convertion ---" % (time.time() - convertion_time))
 
 

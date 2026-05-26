@@ -1,0 +1,2 @@
+Melhores parâmetros: {'nChannel': 90, 'nConv': 3, 'maxIter': 27, 'minLabels': 9, 'lr': 0.04280789003354145, 'stepsize_con': 0.29729394988995367, 'stepsize_sim': 1.323674790329393, 'lambda_rotulo': 4, 'visualize': 1, 'debug_progress': 1, 'debug_interval': 8}
+Métrica: 0.2699871063232422
