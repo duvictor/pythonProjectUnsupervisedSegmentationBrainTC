@@ -132,6 +132,7 @@ def extract_brain_mask(volume: np.ndarray) -> np.ndarray:
     Retorna máscara booleana 3D.
     """
     thresh = threshold_otsu(volume)
+    print(f'Otsu threshold: {thresh}')
     binary = volume > thresh
 
     struct3d = ndimage.generate_binary_structure(3, 2)
@@ -320,6 +321,7 @@ class SegmentationViewer:
     def __init__(self, root: tk.Tk):
         self.root   = root
         self.result = None
+        self.sensitivity_var = tk.DoubleVar(value=1.0) # 1.0 = padrão
         self.root.title("Pipeline de Segmentação RM Cerebral")
         self.root.configure(bg="#161616")
         self.root.geometry("1160x740")
@@ -432,6 +434,15 @@ class SegmentationViewer:
             highlightthickness=0, showvalue=False, length=212
         ).pack(padx=12)
 
+        # Sensibilidade
+        section_label("SENSIBILIDADE DE LESÃO")
+        tk.Scale(
+            ctrl, from_=0.1, to=1.0, orient=tk.HORIZONTAL, resolution=0.05,
+            variable=self.sensitivity_var, command=self._update_display,
+            bg="#222222", fg="white", troughcolor="#444",
+            highlightthickness=0, showvalue=True, length=212
+        ).pack(padx=12)
+
         # Camadas
         section_label("CAMADAS VISÍVEIS")
         self.show_seg_var  = tk.BooleanVar(value=True)
@@ -508,10 +519,32 @@ class SegmentationViewer:
         idx       = self.slice_var.get()
         n         = self.result["n_slices"]
         opacity   = self.opacity_var.get()
+        sens      = self.sensitivity_var.get()
+
+        # Recalcular anomalias com a nova sensibilidade se necessário
+        # Ajustamos os thresholds inversamente à sensibilidade:
+        # Sens maior (ex: 2.0) -> Thresh menor (mais sensível)
+        # Sens menor (ex: 0.5) -> Thresh maior (menos sensível)
+        z_thresh = ANOMALY_Z_THRESH / sens
+        wm_std   = ANOMALY_WM_STD / sens
+
+        # Para performance, recalculamos apenas o slice atual ou o volume todo?
+        # Recalcular o volume todo pode ser pesado se feito a cada movimento do slider.
+        # Mas para o visualizador, o slice atual é suficiente.
+        # No entanto, o info_lbl precisa dos dados globais? Não, o info_lbl mostra o slice atual.
+        
+        vol_norm   = self.result["volume_norm"]
+        brain_mask = self.result["brain_mask"]
+        seg_map    = self.result["seg_map"]
+        
+        # Recalcular apenas para o slice atual para fluidez na UI
+        anom_slice = detect_anomalies_flair(
+            vol_norm[idx], brain_mask[idx], seg_map[idx],
+            z_thresh=z_thresh, wm_std_thresh=wm_std
+        )
 
         orig_slice  = self.result["volume"][idx]
         seg_slice   = self.result["seg_map"][idx]
-        anom_slice  = self.result["anomaly_mask"][idx]
 
         self.slice_lbl.config(text=f"{idx + 1} / {n}")
 
@@ -551,14 +584,13 @@ class SegmentationViewer:
         self.ax_seg.axis("off")
 
         self.canvas.draw_idle()
-        self._update_info(idx)
+        self._update_info(idx, anom_slice)
 
-    def _update_info(self, idx):
+    def _update_info(self, idx, anom_slice):
         if self.result is None:
             return
 
         seg        = self.result["seg_map"][idx]
-        anom       = self.result["anomaly_mask"][idx]
         brain_2d   = self.result["brain_mask"][idx]
         total      = int(brain_2d.sum())
 
@@ -567,7 +599,7 @@ class SegmentationViewer:
             count = int((seg == lbl).sum())
             pct   = (count / total * 100) if total > 0 else 0.0
             lines.append(f"  {name}: {pct:.1f}%")
-        lines.append(f"  Lesões: {int(anom.sum())} voxels")
+        lines.append(f"  Lesões: {int(anom_slice.sum())} voxels")
 
         self.info_lbl.config(text="\n".join(lines))
 
