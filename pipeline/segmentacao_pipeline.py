@@ -2,7 +2,7 @@
 Pipeline de Segmentação de RM Cerebral
 =======================================
 Etapas:
-  1. Carregamento DICOM → volume 3D
+  1. Carregamento DICOM ou NIfTI → volume 3D
   2. Correção de inhomogeneidade (N4 Bias Field Correction via SimpleITK)
   3. Extração cerebral / skull stripping (Otsu + morfologia)
   4. Normalização de intensidade (Z-score dentro da máscara cerebral)
@@ -13,7 +13,7 @@ Etapas:
 Saída: Visualizador interativo com overlays de segmentação e lesões por slice.
 
 Dependências:
-  pip install pydicom numpy scipy scikit-learn scikit-image matplotlib
+  pip install pydicom numpy scipy scikit-learn scikit-image matplotlib nibabel
   pip install SimpleITK   ← opcional, necessário para N4 bias correction
 """
 
@@ -22,11 +22,12 @@ import glob
 import threading
 import numpy as np
 import pydicom
+import nibabel as nib
 from scipy import ndimage
 from sklearn.cluster import KMeans
 from skimage.filters import threshold_otsu
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import warnings
@@ -41,6 +42,7 @@ except ImportError:
 
 # ── Configurações ─────────────────────────────────────────────────────
 DICOM_ROOT         = r"D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\dataset\MR-MS-new"
+NIFTI_ROOT         = r"D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\dataset\nifti"
 CACHE_DIR          = r"D:\Users\paulo\PycharmProjects\pythonProjectUnsupervisedSegmentationBrainTC\pipeline\cache"
 N_TISSUE_CLASSES   = 4        # FLAIR: CSF(suprimido), GM, WM normal, WM hiperintenso
 ANOMALY_Z_THRESH   = 2.0      # FLAIR: threshold mais sensível (lesões EM, edema, hemorragia subaguda)
@@ -96,6 +98,23 @@ def load_dicom_volume(directory):
         metas.append(ds)
 
     return np.stack(slices, axis=0), metas
+
+
+def load_nifti_volume(file_path):
+    """Carrega volume NIfTI (.nii ou .nii.gz) e devolve (volume 3D float32, None, voxel_size).
+    O segundo elemento é None pois NIfTI não possui metadados DICOM.
+    O eixo 0 do array retornado é o eixo de slices."""
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"Arquivo NIfTI não encontrado: {file_path}")
+
+    img = nib.load(file_path)
+    data = img.get_fdata(dtype=np.float32)
+    voxel_size = tuple(float(v) for v in img.header.get_zooms()[:3])
+
+    if data.ndim == 4:
+        data = data[:, :, :, 0]
+
+    return data, None, voxel_size
 
 
 def n4_bias_correction(volume: np.ndarray) -> np.ndarray:
@@ -268,9 +287,82 @@ def detect_anomalies_flair(volume_norm: np.ndarray, brain_mask: np.ndarray,
     return anomaly
 
 
+def save_segmentation_nifti(seg_map: np.ndarray, anomaly_mask: np.ndarray,
+                            output_path: str, voxel_size: tuple = (1.0, 1.0, 1.0)):
+    """Salva a segmentação e lesões como arquivo NIfTI.
+    O volume salvo combina o seg_map (labels 1-4) com as lesões (label 5)."""
+    combined = seg_map.copy()
+    combined[anomaly_mask] = 5
+
+    affine = np.diag([voxel_size[0], voxel_size[1], voxel_size[2], 1.0])
+    img = nib.Nifti1Image(combined.astype(np.uint8), affine)
+    nib.save(img, output_path)
+
+
+def compute_lesion_stats(anomaly_mask: np.ndarray,
+                         voxel_size: tuple = (1.0, 1.0, 1.0)) -> dict:
+    """Calcula estatísticas volumétricas e de área das lesões.
+    Retorna dicionário com volume total (mm³), área estimada (mm²),
+    número de lesões e estatísticas por lesão individual."""
+    voxel_vol_mm3 = voxel_size[0] * voxel_size[1] * voxel_size[2]
+    pixel_area_mm2 = voxel_size[1] * voxel_size[2]
+
+    total_voxels = int(anomaly_mask.sum())
+    total_volume_mm3 = total_voxels * voxel_vol_mm3
+
+    labeled, n_lesions = ndimage.label(anomaly_mask)
+
+    lesion_areas_mm2 = []
+    for slice_idx in range(anomaly_mask.shape[0]):
+        slice_mask = anomaly_mask[slice_idx]
+        if slice_mask.any():
+            lesion_areas_mm2.append(int(slice_mask.sum()) * pixel_area_mm2)
+
+    total_area_mm2 = sum(lesion_areas_mm2)
+
+    per_lesion = []
+    if n_lesions > 0:
+        for comp_id in range(1, n_lesions + 1):
+            comp_mask = labeled == comp_id
+            comp_voxels = int(comp_mask.sum())
+            per_lesion.append({
+                "id": comp_id,
+                "voxels": comp_voxels,
+                "volume_mm3": comp_voxels * voxel_vol_mm3,
+            })
+        per_lesion.sort(key=lambda x: x["volume_mm3"], reverse=True)
+
+    return {
+        "total_voxels": total_voxels,
+        "total_volume_mm3": total_volume_mm3,
+        "total_area_mm2": total_area_mm2,
+        "n_lesions": n_lesions,
+        "per_lesion": per_lesion,
+    }
+
+
+def _detect_input_format(patient_path: str) -> str:
+    """Detecta se o caminho aponta para DICOM ou NIfTI.
+    Retorna 'nifti' se o caminho for um arquivo .nii/.nii.gz ou um diretório
+    contendo arquivos *_FLAIR.nii.gz. Caso contrário retorna 'dicom'."""
+    if os.path.isfile(patient_path):
+        basename = os.path.basename(patient_path).lower()
+        if basename.endswith(".nii") or basename.endswith(".nii.gz"):
+            return "nifti"
+
+    if os.path.isdir(patient_path):
+        flair_files = glob.glob(os.path.join(patient_path, "*_FLAIR.nii.gz"))
+        flair_files += glob.glob(os.path.join(patient_path, "*_FLAIR.nii"))
+        if flair_files:
+            return "nifti"
+
+    return "dicom"
+
+
 def run_pipeline(patient_dir: str, progress_cb=None) -> dict:
     """
     Executa o pipeline completo para um paciente.
+    Aceita diretório DICOM ou caminho/diretório NIfTI (FLAIR).
     progress_cb(mensagem: str, percentual: int) → callback opcional de progresso.
     Retorna dicionário com todos os artefatos gerados.
     """
@@ -278,8 +370,24 @@ def run_pipeline(patient_dir: str, progress_cb=None) -> dict:
         if progress_cb:
             progress_cb(msg, pct)
 
-    cb("Carregando DICOMs...", 5)
-    volume, metas = load_dicom_volume(patient_dir)
+    input_format = _detect_input_format(patient_dir)
+    voxel_size = (1.0, 1.0, 1.0)
+
+    if input_format == "nifti":
+        cb("Carregando NIfTI FLAIR...", 5)
+        if os.path.isfile(patient_dir):
+            nifti_path = patient_dir
+        else:
+            flair_files = glob.glob(os.path.join(patient_dir, "*_FLAIR.nii.gz"))
+            flair_files += glob.glob(os.path.join(patient_dir, "*_FLAIR.nii"))
+            if not flair_files:
+                raise FileNotFoundError(
+                    f"Nenhum arquivo FLAIR NIfTI encontrado em: {patient_dir}")
+            nifti_path = flair_files[0]
+        volume, metas, voxel_size = load_nifti_volume(nifti_path)
+    else:
+        cb("Carregando DICOMs...", 5)
+        volume, metas = load_dicom_volume(patient_dir)
 
     if HAS_SITK:
         cb("N4 Bias Field Correction (pode demorar alguns minutos)...", 15)
@@ -310,6 +418,7 @@ def run_pipeline(patient_dir: str, progress_cb=None) -> dict:
         "n_slices":     volume.shape[0],
         "metas":        metas,
         "patient_dir":  patient_dir,
+        "voxel_size":   voxel_size,
     }
 
 
@@ -344,13 +453,34 @@ class SegmentationViewer:
         tk.Label(bar, text="Paciente:", bg="#252525", fg="white",
                  font=("Arial", 11)).pack(side=tk.LEFT, padx=(14, 4))
 
-        patient_dirs = sorted([
-            d for d in os.listdir(DICOM_ROOT)
-            if os.path.isdir(os.path.join(DICOM_ROOT, d))
-        ])
-        self.patient_var = tk.StringVar(value=patient_dirs[0] if patient_dirs else "")
-        ttk.Combobox(bar, textvariable=self.patient_var, values=patient_dirs,
-                     width=10, state="readonly").pack(side=tk.LEFT, padx=4)
+        self._patient_paths = {}
+
+        if os.path.isdir(DICOM_ROOT):
+            for d in sorted(os.listdir(DICOM_ROOT)):
+                full = os.path.join(DICOM_ROOT, d)
+                if os.path.isdir(full):
+                    label = f"[DICOM] {d}"
+                    self._patient_paths[label] = full
+
+        if os.path.isdir(NIFTI_ROOT):
+            for group in sorted(os.listdir(NIFTI_ROOT)):
+                group_path = os.path.join(NIFTI_ROOT, group)
+                if not os.path.isdir(group_path):
+                    continue
+                for patient in sorted(os.listdir(group_path)):
+                    patient_path = os.path.join(group_path, patient)
+                    if not os.path.isdir(patient_path):
+                        continue
+                    flair = glob.glob(os.path.join(patient_path, "*_FLAIR.nii.gz"))
+                    flair += glob.glob(os.path.join(patient_path, "*_FLAIR.nii"))
+                    if flair:
+                        label = f"[NIfTI] {patient}"
+                        self._patient_paths[label] = patient_path
+
+        patient_labels = list(self._patient_paths.keys())
+        self.patient_var = tk.StringVar(value=patient_labels[0] if patient_labels else "")
+        ttk.Combobox(bar, textvariable=self.patient_var, values=patient_labels,
+                     width=22, state="readonly").pack(side=tk.LEFT, padx=4)
 
         self.process_btn = tk.Button(
             bar, text="▶  Processar Pipeline",
@@ -360,6 +490,24 @@ class SegmentationViewer:
             activebackground="#0d47a1"
         )
         self.process_btn.pack(side=tk.LEFT, padx=10)
+
+        self.save_btn = tk.Button(
+            bar, text="💾 Salvar NIfTI",
+            command=self._save_segmentation,
+            bg="#2e7d32", fg="white", relief=tk.FLAT,
+            font=("Arial", 10, "bold"), padx=10, cursor="hand2",
+            activebackground="#1b5e20", state=tk.DISABLED
+        )
+        self.save_btn.pack(side=tk.LEFT, padx=4)
+
+        self.stats_btn = tk.Button(
+            bar, text="📊 Área Lesões",
+            command=self._show_lesion_stats,
+            bg="#6a1b9a", fg="white", relief=tk.FLAT,
+            font=("Arial", 10, "bold"), padx=10, cursor="hand2",
+            activebackground="#4a148c", state=tk.DISABLED
+        )
+        self.stats_btn.pack(side=tk.LEFT, padx=4)
 
         self.status_lbl = tk.Label(
             bar, text="Selecione um paciente e clique em Processar",
@@ -478,9 +626,9 @@ class SegmentationViewer:
 
     def _start_processing(self):
         patient = self.patient_var.get()
-        if not patient:
+        if not patient or patient not in self._patient_paths:
             return
-        patient_dir = os.path.join(DICOM_ROOT, patient)
+        patient_dir = self._patient_paths[patient]
         self.process_btn.config(state=tk.DISABLED)
         self.progress_var.set(0)
 
@@ -504,6 +652,8 @@ class SegmentationViewer:
         self.slice_slider.config(to=n - 1)
         self.slice_var.set(n // 2)
         self.process_btn.config(state=tk.NORMAL)
+        self.save_btn.config(state=tk.NORMAL)
+        self.stats_btn.config(state=tk.NORMAL)
         self._update_display()
 
     def _on_error(self, exc):
@@ -602,6 +752,81 @@ class SegmentationViewer:
         lines.append(f"  Lesões: {int(anom_slice.sum())} voxels")
 
         self.info_lbl.config(text="\n".join(lines))
+
+    def _save_segmentation(self):
+        if self.result is None:
+            return
+
+        default_name = os.path.basename(self.result["patient_dir"]) + "_segmentacao.nii.gz"
+        file_path = filedialog.asksaveasfilename(
+            title="Salvar Segmentação como NIfTI",
+            defaultextension=".nii.gz",
+            initialfile=default_name,
+            filetypes=[("NIfTI comprimido", "*.nii.gz"), ("NIfTI", "*.nii")]
+        )
+        if not file_path:
+            return
+
+        voxel_size = self.result.get("voxel_size", (1.0, 1.0, 1.0))
+        save_segmentation_nifti(
+            self.result["seg_map"],
+            self.result["anomaly_mask"],
+            file_path,
+            voxel_size=voxel_size
+        )
+        self.status_lbl.config(text=f"Salvo: {os.path.basename(file_path)}")
+
+    def _show_lesion_stats(self):
+        if self.result is None:
+            return
+
+        voxel_size = self.result.get("voxel_size", (1.0, 1.0, 1.0))
+        stats = compute_lesion_stats(self.result["anomaly_mask"], voxel_size)
+
+        win = tk.Toplevel(self.root)
+        win.title("Estatísticas de Lesões")
+        win.configure(bg="#1e1e1e")
+        win.geometry("480x420")
+
+        tk.Label(win, text="Estatísticas de Lesões", bg="#1e1e1e", fg="white",
+                 font=("Arial", 13, "bold")).pack(pady=(12, 6))
+
+        voxel_str = f"{voxel_size[0]:.3f} x {voxel_size[1]:.3f} x {voxel_size[2]:.3f} mm"
+        info_lines = [
+            f"Dimensão do voxel: {voxel_str}",
+            f"Total de voxels de lesão: {stats['total_voxels']:,}",
+            f"Volume total de lesões: {stats['total_volume_mm3']:,.2f} mm³ "
+            f"({stats['total_volume_mm3'] / 1000:.2f} cm³)",
+            f"Área total de lesões (projeção axial): {stats['total_area_mm2']:,.2f} mm²",
+            f"Número de lesões individuais: {stats['n_lesions']}",
+        ]
+
+        for line in info_lines:
+            tk.Label(win, text=line, bg="#1e1e1e", fg="#cccccc",
+                     font=("Consolas", 10), anchor="w").pack(anchor="w", padx=16, pady=2)
+
+        if stats["per_lesion"]:
+            tk.Label(win, text="\nMaiores lesões:", bg="#1e1e1e", fg="#f0a020",
+                     font=("Arial", 11, "bold")).pack(anchor="w", padx=16, pady=(8, 4))
+
+            frame = tk.Frame(win, bg="#1e1e1e")
+            frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=4)
+
+            scrollbar = tk.Scrollbar(frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+            listbox = tk.Listbox(frame, bg="#2a2a2a", fg="#cccccc",
+                                 font=("Consolas", 9), selectbackground="#444",
+                                 yscrollcommand=scrollbar.set, height=12)
+            listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.config(command=listbox.yview)
+
+            for lesion in stats["per_lesion"][:50]:
+                vol_mm3 = lesion["volume_mm3"]
+                listbox.insert(tk.END,
+                    f"  Lesão #{lesion['id']:3d}  |  "
+                    f"{lesion['voxels']:6,} voxels  |  "
+                    f"{vol_mm3:10,.2f} mm³")
 
     def _step_slice(self, delta):
         if self.result is None:
